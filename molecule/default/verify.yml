@@ -1,0 +1,8 @@
+- name: Verify
+  hosts: all
+  gather_facts: no
+  tasks:
+    - name: Assert gcloud is installed
+      ansible.builtin.command: which gcloud
+      register: gcloud_check
+      failed_when: gcloud_check.rc != 0

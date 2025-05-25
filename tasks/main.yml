@@ -1,0 +1,88 @@
+- name: Check if local gcloud service account json exists
+  ansible.builtin.stat:
+    path: "{{ environment_root }}/service_account_creds.json"
+  register: gcloud_sa_json
+
+- name: Set gcloud_sa_json path fact
+  ansible.builtin.set_fact:
+    gcloud_sa_json_path: "{{ environment_root }}/service_account_creds.json"
+  when: gcloud_sa_json.stat.exists
+
+- name: Set gcloud environment fact
+  ansible.builtin.set_fact:
+    gcp_project: "{{ gcp_project }}"
+
+- name: Check for existing gcloud installation
+  ansible.builtin.command: which gcloud
+  register: gcloud_check
+  ignore_errors: true
+  changed_when: false
+
+- name: Set gcloud path fact
+  ansible.builtin.set_fact:
+    gcloud_path: "{{ gcloud_check.stdout if gcloud_check.rc == 0 else gcloud_install_dir + '/bin/gcloud' }}"
+
+- name: Install Google Cloud SDK (if not present)
+  block:
+    - name: Create temp directory
+      ansible.builtin.file:
+        path: "{{ gcloud_install_dir }}"
+        state: directory
+        mode: '0755'
+      when: gcloud_check.rc != 0
+
+    - name: Download SDK
+      ansible.builtin.get_url:
+        url: "https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-sdk-{{ gcloud_version }}-linux-x86_64.tar.gz"
+        dest: "/tmp/gcloud.tar.gz"
+      when: gcloud_check.rc != 0
+
+    - name: Extract SDK
+      ansible.builtin.unarchive:
+        src: "/tmp/gcloud.tar.gz"
+        dest: "{{ gcloud_install_dir }}"
+        remote_src: yes
+        extra_opts: ["--strip-components=1"]
+        creates: "{{ gcloud_install_dir }}/bin/gcloud"
+      when: gcloud_check.rc != 0
+
+    - name: Copy file from local to Packer instance
+      ansible.builtin.copy:
+        src: "{{ environment_root }}/service_account_creds.json"
+        dest: "{{ gcloud_install_dir }}"
+      when: gcloud_check.rc != 0
+
+    - name: Set gcloud_sa_json path fact
+      ansible.builtin.set_fact:
+        gcloud_sa_json_path: "{{ gcloud_install_dir }}/service_account_creds.json"
+      when: not gcloud_sa_json.stat.exists
+
+  rescue:
+    - name: Cleanup on failure
+      ansible.builtin.file:
+        path: "{{ gcloud_install_dir }}"
+        state: absent
+      ignore_errors: true
+
+- name: Authenticate service account
+  ansible.builtin.shell: >-
+    {{ gcloud_path }} auth activate-service-account
+    --key-file={{ gcloud_sa_json_path }}
+    --quiet
+
+- name: Read individual secrets from GCP Secret Manager
+  shell: >-
+    {{ gcloud_path }} secrets versions access latest
+    --secret={{ item }}
+    --project {{ gcp_project }}
+  register: secrets_response
+  with_items: "{{ secret_names }}"
+  no_log: false
+
+- name: Create secrets_dict dictionary
+  set_fact:
+    secrets_dict: "{{ secrets_dict | default({}) | combine({ item.item: item.stdout }) }}"
+  loop: "{{ secrets_response.results }}"
+  no_log: true
+  changed_when: false
+  ignore_errors: true

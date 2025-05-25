@@ -1,0 +1,16 @@
+gcloud_install_dir: /opt/google-cloud-sdk
+gcloud_version: 467.0.0
+environment_root: "{{ lookup('env', 'APPLIANCES_ENVIRONMENT_ROOT') }}"
+gcp_project: "nesi-slurm-{{ lookup('env', 'GCP_ENVIRONMENT') }}"
+secret_names:
+  - lander_ssh_dsa_key
+  - lander_ssh_ecdsa_key
+  - lander_ssh_ed25519_key
+  - lander_ssh_rsa_key
+  - lander_ssh_dsa_key_pub
+  - lander_ssh_ecdsa_key_pub
+  - lander_ssh_ed25519_key_pub
+  - lander_ssh_rsa_key_pub
+  - vault_mysql_root_password
+  - vault_mysql_slurm_password
+  - vault_openhpc_mungekey
